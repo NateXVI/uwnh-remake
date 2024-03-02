@@ -1,5 +1,6 @@
 import { wasm } from './injector_wasm.js';
 import '../components/draggable.js';
+import { once } from './utils.js';
 var _GAME = wasm.instance.exports;
 
 export class Editor extends HTMLElement {
@@ -19,6 +20,11 @@ export class Editor extends HTMLElement {
         GLOBALS.EVENTBUS.addEventListener('viewport-size', (e) => {
             this.onViewportSize(e);
         });
+
+        const atlas = this.shadowRoot.getElementById('atlas');
+        const atlasClampOnce = once(() => atlas.clampPositionToWindow());
+        const editor = this.shadowRoot.getElementById('editor');
+        const editorClampOnce = once(() => editor.clampPositionToWindow());
         GLOBALS.EVENTBUS.addEventListener('editor-input', (e) => {
             if (e.code === 'KeyL') {
                 ++this.current_layer;
@@ -29,9 +35,11 @@ export class Editor extends HTMLElement {
                 // TODO: Ideally, only update existing elements, don't remove & add them over and over
                 this.renderViewportData();
             } else if (e.code === 'KeyA') {
-                this.shadowRoot.getElementById('atlas').classList.toggle('hidden');
+                atlas.classList.toggle('hidden');
+                atlasClampOnce();
             } else if (e.code === 'KeyP') {
-                this.shadowRoot.getElementById('editor').classList.toggle('hidden');
+                editor.classList.toggle('hidden');
+                editorClampOnce();
             }
         });
         this.shadowRoot.getElementById('clickable_view').addEventListener('click', (e) => {
