@@ -2,7 +2,7 @@ import { wasm } from './injector_wasm.js';
 import { Entity } from './entity.js';
 import { CollisionEntity } from './collision-entity.js';
 import { ViewportEntity } from './viewport-entity.js';
-import { Draggable } from './draggable.js';
+import '../components/draggable.js';
 
 var _GAME = wasm.instance.exports;
 // TODO: THIS IS ALL FOR TESTING, REMOVE THIS SOON
@@ -72,7 +72,6 @@ customElements.define('viewport-entity-component', ViewportEntity);
 // *. run the requestAnimationFrame loop with a tick function
 // *. pretty much the tick function iterates over frames and executes rendering of any appropriate entities and whatnot
 // TODO: Put stats in editor mode only (use the menu)
-// TODO: At some point after all elements are injected (editor and all that) we should run the draggable.js script
 // *. Load twitch functionality
 // *. Load multiplayer functionality
 
@@ -88,7 +87,7 @@ export class Game extends HTMLElement {
         this.camera_x = 0;
         this.camera_y = 0;
         
-        // TODO: Put this in a loader sub object
+        // TODO: Put this in a loader sub object/component
         this.atlas_loaded = false;
         this.layer_id_to_image_loaded = false;
 
@@ -98,7 +97,6 @@ export class Game extends HTMLElement {
     connectedCallback() {
         this.render();
         
-        Draggable(this.shadowRoot.querySelector('#main_menu'));
         var atlas = new Image();
         atlas.onload = () => {
             this.atlas_loaded = true;
@@ -106,9 +104,9 @@ export class Game extends HTMLElement {
             this.loaded();
         }
         atlas.src = GLOBALS.ATLAS_PNG_FILENAME;
-        this.loadJsonFile(GLOBALS.LAYER_ID_TO_IMAGE_JSON_FILENAME, (data) => {
+        this.loadJsonFile(GLOBALS.IMAGE_DATA, (data) => {
             if (data) {
-                GLOBALS.LAYER_ID_TO_IMAGE = data;
+                GLOBALS.IMAGE_DATA = data;
                 this.layer_id_to_image_loaded = true;
                 this.loaded();
             }
@@ -154,76 +152,33 @@ export class Game extends HTMLElement {
             var viewport_y = Math.floor(i / this.width);
             var viewport_x = i % this.width;
             if (_GAME.viewport_getData(viewport_x, viewport_y)) {
-                // console.log({viewport_x, viewport_y});
-                // Note: We do this so that, down the road, we can offset the layer in case we need that
-                var layer = 0;
-                var bg_tile_id = _GAME.game_getWorldDataAtViewportCoordinate(layer, viewport_x, viewport_y);
-                if (bg_tile_id >= 0) {
-                    var new_entity = document.createElement('entity-component');
-                    new_entity.updateSize();
-                    new_entity.setViewportXY(viewport_x, viewport_y);
-                    new_entity.setLayer(layer);
-                    new_entity.setEntityId(bg_tile_id);
-                    if (bg_tile_id === 3) {
-                        new_entity.style.border = '3px solid rgb(0, 0, 255)';
+                var total_layers = _GAME.game_getCurrentWorldTotalLayers();
+                for (var layer = 0; layer < total_layers; ++layer) {
+                    if (layer === _GAME.game_getCurrentWorldCollisionLayer()) { continue; }
+                    if (layer === _GAME.game_getCurrentWorldEntityLayer()) {
+                        // TODO: Deal with entities properly here
+                        var entity_id = _GAME.game_getWorldDataAtViewportCoordinate(layer, viewport_x, viewport_y);
+                        console.log('Entity ID:', entity_id);
+                        if (entity_id > 0) {
+                            var new_entity = document.createElement('entity-component');
+                            new_entity.updateSize();
+                            new_entity.setViewportXY(viewport_x, viewport_y);
+                            new_entity.setLayer(layer);
+                            new_entity.setEntityId(entity_id);
+                            this.shadowRoot.getElementById('view').appendChild(new_entity);
+                        }
+                    } else {
+                        var tile_id = _GAME.game_getWorldDataAtViewportCoordinate(layer, viewport_x, viewport_y);
+                        if (tile_id >= 0) {
+                            var new_entity = document.createElement('entity-component');
+                            new_entity.updateSize();
+                            new_entity.setViewportXY(viewport_x, viewport_y);
+                            new_entity.setLayer(layer);
+                            new_entity.setEntityId(tile_id);
+                            this.shadowRoot.getElementById('view').appendChild(new_entity);
+                        }
                     }
-                    this.shadowRoot.getElementById('view').appendChild(new_entity);
                 }
-                // ++layer;
-                // var bg_tile_id = _GAME.game_getWorldDataAtViewportCoordinate(layer, viewport_x, viewport_y);
-                // if (bg_tile_id > 0) {
-                //     var new_entity = document.createElement('entity-component');
-                //     new_entity.updateSize();
-                //     new_entity.setViewportXY(viewport_x, viewport_y);
-                //     new_entity.setLayer(layer);
-                //     new_entity.setEntityId(bg_tile_id);
-                //     this.shadowRoot.getElementById('view').appendChild(new_entity);
-                // }
-
-                // ++layer;
-                // // TODO: Should pull ENTITY_LAYER from the wasm file
-                // var ENTITY_LAYER = 2;
-                // var entity_id = _GAME.game_getWorldDataAtViewportCoordinate(ENTITY_LAYER, viewport_x, viewport_y);
-                // if (entity_id > 0) {
-                //     var entity_type = null;
-                //     // TODO: THIS IS THE WAY TO CATCH ERRORS FROM OUTPUT IN WASM
-                //     try {
-                //         entity_type = _GAME.game_entityGetType((entity_id -1));
-                //     } catch (error) {
-                //         console.error({error, viewport_x, viewport_y, entity_id});
-                //     }
-                //     if (entity_type === 99) {
-                //         console.log('health restore');
-                //         var div = document.createElement('div');
-                //         div.style.width = (GLOBALS.SIZE * GLOBALS.SCALE) + 'px';
-                //         div.style.height = (GLOBALS.SIZE * GLOBALS.SCALE) + 'px';
-                //         div.style.position = 'absolute';
-                //         div.style.left = (viewport_x * (GLOBALS.SIZE * GLOBALS.SCALE)) + 'px';
-                //         div.style.top = (viewport_y * (GLOBALS.SIZE * GLOBALS.SCALE)) + 'px';
-                //         div.style.backgroundColor = 'rgba(255, 0, 0, .7)';
-                //         div.style.zIndex = layer;
-                //         this.shadowRoot.getElementById('view').appendChild(div);
-                //     } else if (entity_type === 98) {
-                //         console.log('octopus');
-                //         var div = document.createElement('div');
-                //         div.style.width = (GLOBALS.SIZE * GLOBALS.SCALE) + 'px';
-                //         div.style.height = (GLOBALS.SIZE * GLOBALS.SCALE) + 'px';
-                //         div.style.position = 'absolute';
-                //         div.style.left = (viewport_x * (GLOBALS.SIZE * GLOBALS.SCALE)) + 'px';
-                //         div.style.top = (viewport_y * (GLOBALS.SIZE * GLOBALS.SCALE)) + 'px';
-                //         div.style.backgroundColor = 'rgba(0, 0, 255, .7)';
-                //         div.style.zIndex = layer;
-                //         this.shadowRoot.getElementById('view').appendChild(div);
-                //     } else if (entity_id > 0) {
-                //         var new_entity = document.createElement('entity-component');
-                //         new_entity.updateSize();
-                //         new_entity.setViewportXY(viewport_x, viewport_y);
-                //         new_entity.setLayer(layer);
-                //         new_entity.setEntityId(entity_id);
-                //         this.shadowRoot.getElementById('view').appendChild(new_entity);
-                //     }
-                //     // TODO: ENTITY_TYPE_OR_ID_TO_IMAGE where type is first and then ID
-                // }
             }
         }
     }
@@ -354,17 +309,8 @@ export class Game extends HTMLElement {
                 background-position: -1px -1px;
                 position: relative;
             }
-            #main_menu {
-                position: absolute;
-                top: 0px;
-                left: 0px;
-                width: 400px;
-                height: 400px;
-                z-index: 1000001;
-                background-color: rgba(0, 0, 0, 0.96);
+            #main-menu-container {
                 color: white;
-                border: 2px solid orange;
-                border-radius: 8px;
 
                 padding: 0.6em;
                 display: grid;
@@ -377,25 +323,26 @@ export class Game extends HTMLElement {
                 background-color: orange;
             }
             </style>
-            <div id="main_menu">
-                <div class="draggable-header"></div>
-                <div class="title">Main Menu</div>
-                <div class="two-column-grid">
-                    <div>FPS</div><div>XXX</div>
+            <x-draggable name="main_menu" id="main_menu">
+                <div id="main-menu-container" style="padding: 1rem">
+                    <div class="title">Main Menu</div>
+                    <div class="two-column-grid">
+                        <div>FPS</div><div>XXX</div>
+                    </div>
+                    <div class="two-column-grid">
+                        <div>Els</div><div>XXX</div>
+                    </div>
+                    <div class="two-column-grid">
+                        <div>Mode</div><div>XXX</div>
+                    </div>
+                    <div>
+                        Press 'H' for help
+                    </div>
+                    <div>
+                        Press 'X' to hide/show this
+                    </div>
                 </div>
-                <div class="two-column-grid">
-                    <div>Els</div><div>XXX</div>
-                </div>
-                <div class="two-column-grid">
-                    <div>Mode</div><div>XXX</div>
-                </div>
-                <div>
-                    Press 'H' for help
-                </div>
-                <div>
-                    Press 'X' to hide/show this
-                </div>
-            </div>
+            </x-draggable>
             <div id="clickable_view"></div>
             <div id="view"></div>
         `;

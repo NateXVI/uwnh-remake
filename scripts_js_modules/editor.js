@@ -1,5 +1,5 @@
-import { Draggable } from './draggable.js';
 import { wasm } from './injector_wasm.js';
+import '../components/draggable.js';
 var _GAME = wasm.instance.exports;
 
 export class Editor extends HTMLElement {
@@ -14,8 +14,6 @@ export class Editor extends HTMLElement {
 
     connectedCallback() {
         this.render();
-        Draggable(this.shadowRoot.querySelector('#editor'));
-        Draggable(this.shadowRoot.querySelector('#atlas'));
         // Listen to game-component for custom event called 'viewport-size'
         var game_component = document.querySelector('game-component');
         GLOBALS.EVENTBUS.addEventListener('viewport-size', (e) => {
@@ -76,7 +74,14 @@ export class Editor extends HTMLElement {
             var x = this.last_atlas_click.x;
             var y = this.last_atlas_click.y;
             // TODO: What about animations?
-            GLOBALS.LAYER_ID_TO_IMAGE[layer_id][data_id] = [
+            var current_world_index = _GAME.game_getCurrentWorldIndex();
+            if (!GLOBALS.IMAGE_DATA[current_world_index]) {
+                GLOBALS.IMAGE_DATA[current_world_index] = {};
+            }
+            if (!GLOBALS.IMAGE_DATA[current_world_index][layer_id]) {
+                GLOBALS.IMAGE_DATA[current_world_index][layer_id] = {};
+            }
+            GLOBALS.IMAGE_DATA[current_world_index][layer_id][data_id] = [
                 [x * (GLOBALS.SIZE * GLOBALS.SCALE), y * (GLOBALS.SIZE * GLOBALS.SCALE)]
             ];
             var game_component = document.querySelector('game-component');
@@ -113,16 +118,15 @@ export class Editor extends HTMLElement {
 
             if (_GAME.viewport_getData(viewport_x, viewport_y)) {
                 // TODO: this.renderCollisionData();
-                // TODO: Should pull COLLISION_LAYER from the wasm file
-                // var COLLISION_LAYER = 3;
-                // var collision = _GAME.game_getWorldDataAtViewportCoordinate(COLLISION_LAYER, viewport_x, viewport_y);
-                // if (collision === 1) {
-                //     var collision_entity = document.createElement('collision-entity-component');
-                //     collision_entity.updateSize();
-                //     collision_entity.setViewportXY(viewport_x, viewport_y);
-                //     collision_entity.setLayer(COLLISION_LAYER);
-                //     game_component.shadowRoot.getElementById('view').appendChild(collision_entity);
-                // }
+                var COLLISION_LAYER = _GAME.game_getCurrentWorldCollisionLayer();
+                var collision = _GAME.game_getWorldDataAtViewportCoordinate(COLLISION_LAYER, viewport_x, viewport_y);
+                if (collision === 1) {
+                    var collision_entity = document.createElement('collision-entity-component');
+                    collision_entity.updateSize();
+                    collision_entity.setViewportXY(viewport_x, viewport_y);
+                    collision_entity.setLayer(COLLISION_LAYER);
+                    game_component.shadowRoot.getElementById('view').appendChild(collision_entity);
+                }
 
                 var viewport_entity = document.createElement('viewport-entity-component');
                 viewport_entity.updateSize();
@@ -166,30 +170,13 @@ export class Editor extends HTMLElement {
             .hidden {
                 display: none !important;
             }
-            #editor, #atlas {
-                position: absolute;
-                top: 0px;
-                left: 0px;
-                width: 400px;
-                height: 400px;
-                z-index: 1000001;
-                background-color: rgba(0, 0, 0, 0.96);
-                color: white;
-                border: 2px solid orange;
-                border-radius: 8px;
-            }
-            #editor {
+            #editor-container {
                 padding: 0.6em;
                 display: grid;
                 grid-auto-flow: row;
                 overflow-y: auto;
             }
-            .draggable-header {
-                width: 100%;
-                height: 2em;
-                background-color: orange;
-            }
-            #editor input {
+            #editor-container input {
                 border: 1px solid rgb(158 158 158);
                 padding: 0.8em;
                 padding-top: 0.5em;
@@ -199,7 +186,7 @@ export class Editor extends HTMLElement {
                 color: white;
                 border-radius: 4px;
             }
-            #editor input[type="button"] {
+            #editor-container input[type="button"] {
                 cursor: pointer;
             }
             #clickable_view {
@@ -219,31 +206,40 @@ export class Editor extends HTMLElement {
             </style>
             <div id="clickable_view"></div>
             <div id="clicked_view"></div>
-            <div class="hidden" id="editor">
-                <div class="draggable-header"></div>
-                <div class="title">EDITOR</div>
-                <div id="current_asset"><div id="current_asset_img" src=""></div></div>
-                <div class="two-column-grid" id="current_layer">
-                    <div class="input_title">Current Layer</div><input type="text" id="current_layer_id" value="0" />
+            <x-draggable name="editor" id="editor" class="hidden">
+                <div id="editor-container">
+                    <div class="draggable-header"></div>
+                    <div class="title">EDITOR</div>
+                    <div id="current_asset"><div id="current_asset_img" src=""></div></div>
+                    <div class="two-column-grid" id="current_layer">
+                        <div class="input_title">Current Layer</div><input type="text" id="current_layer_id" value="0" />
+                    </div>
+                    <div class="two-column-grid" id="current_data">
+                        <div class="input_title">Current Data Value</div><input type="text" id="current_data_id" value="0" />
+                    </div>
+                    <div id="apply_data_value_to_layer_coordinate">
+                        <input type="button" id="apply_data_value_to_layer_coordinate_input" value="Apply Data Value to Selected World & Layer Coordinate" />
+                    </div>
+                    <div id="current_selected_atlas"><div id="current_selected_atlas_img" src=""></div></div>
+                    <div id="apply_image_to_layer_id">
+                        <input type="button" id="apply_image_to_layer_id_input" value="Apply Image to Data" />
+                    </div>
+                    <div id="current_editor_mode"></div>
+                    <div id="current_editor_mode">[CURRENT EDITOR MODE HERE]</div>
+                    <div id="extract_world_data">[EXTRACT WORLD DATA HERE] world_0_data.bin</div>
+                    <div id="extract_layer_data">[EXTRACT LAYER DATA HERE] world_0_layer_0.bin</div>
+                    <div id="edit_entity">[EDIT ENTITY HERE]</div>
+                    <div id="extract_entity">[EXTRACT ENTITY HERE] entity_0.bin</div>
+                    <div id="list_world_layers">[LIST WORLD LAYERS HERE]</div>
+                    <div id="change_world_entity_layer">[CHANGE WORLD ENTITY LAYER HERE]</div>
+                    <div id="change_world_collisions_layer">[CHANGE WORLD COLLISIONS LAYER HERE]</div>
                 </div>
-                <div class="two-column-grid" id="current_data">
-                    <div class="input_title">Current Data Value</div><input type="text" id="current_data_id" value="0" />
-                </div>
-                <div id="apply_data_value_to_layer_coordinate">
-                    <input type="button" id="apply_data_value_to_layer_coordinate_input" value="Apply Data Value to Selected World & Layer Coordinate" />
-                </div>
-                <div id="current_selected_atlas"><div id="current_selected_atlas_img" src=""></div></div>
-                <div id="apply_image_to_layer_id">
-                    <input type="button" id="apply_image_to_layer_id_input" value="Apply Image to Data" />
-                </div>
-                <div id="current_editor_mode"></div>
-            </div>
-            <div class="hidden" id="atlas">
-                <div class="draggable-header"></div>
-                <div style="overflow: scroll; width: 100%; height: 100%; background: black;">
+            </x-draggable>
+            <x-draggable class="hidden" name="atlas" id="atlas">
+                <div id="atlas-container">
                     <img id="atlas_img" src="${GLOBALS.ATLAS_PNG_FILENAME}" />
                 </div>
-            </div>
+            </x-draggable>
         `;
     }
 
