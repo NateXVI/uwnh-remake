@@ -22,6 +22,7 @@ const importObject = {
         },
     }
 };
-const wasm = await WebAssembly.instantiateStreaming(fetch(wasmPath), importObject);
-export { wasm };
-// export const injectWASM = () => WebAssembly.instantiateStreaming(fetch(wasmPath), importObject);
+
+const req = await fetch(wasmPath);
+const buffer = await req.arrayBuffer();
+export const wasm = await WebAssembly.instantiate(buffer, importObject);
