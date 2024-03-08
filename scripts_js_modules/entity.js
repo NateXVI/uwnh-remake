@@ -8,6 +8,9 @@ export class Entity extends HTMLElement {
         this.entity_id = null;
         this.health = null;
         this.type = null;
+        this.auto_animate = null;
+        this.animation_frame = null;
+        this.layer = null;
         this.attachShadow({mode: 'open'});
     }
 
@@ -53,6 +56,23 @@ export class Entity extends HTMLElement {
         this.viewport_y = value;
         this.top = (this.viewport_y * (globals.SIZE * globals.SCALE));
     }
+    setAnimationProperties() {
+        this.auto_animate = 1;
+        this.animation_frame = 0;
+    }
+    updateAnimationFrame() {
+        ++this.animation_frame;
+        if (this.animation_frame >= this.getImageCoordsFrames(this.layer, this.entity_id)) {
+            this.animation_frame = 0;
+        }
+
+        let image_frame_coords = this.getImageCoords(this.layer, this.entity_id, this.animation_frame);
+        if (image_frame_coords !== null && image_frame_coords !== undefined) {
+            let x = image_frame_coords[0];
+            let y = image_frame_coords[1];
+            this.style.backgroundPosition = '-' + x + 'px -' + y + 'px';
+        }
+    }
 
     connectedCallback() {
         this.render();
@@ -89,6 +109,20 @@ export class Entity extends HTMLElement {
             return null;
         }
         return globals.IMAGE_DATA[current_world_index][layer][id][frame];
+        // TODO: Real entities (npcs and characters and other "moving" things should have a default image)
+    }
+    getImageCoordsFrames(layer, id) {
+        var current_world_index = _GAME.game_getCurrentWorldIndex();
+        if (!globals.IMAGE_DATA[current_world_index]) {
+            return null;
+        }
+        if (!globals.IMAGE_DATA[current_world_index][layer]) {
+            return null;
+        }
+        if (!globals.IMAGE_DATA[current_world_index][layer][id]) {
+            return null;
+        }
+        return Object.keys(globals.IMAGE_DATA[current_world_index][layer][id]).length;
         // TODO: Real entities (npcs and characters and other "moving" things should have a default image)
     }
 

@@ -7,6 +7,7 @@ import '../components/draggable.js';
 import { Multiplayer } from './multiplayer.js';
 import { MultiplayerHost } from './multiplayer_host.js';
 import { globalStyles } from "./global-styles.js";
+import { FRAMES } from './frames.js';
 
 let current_time_stamp = new Date().getTime();
 let previous_time_stamp = 0;
@@ -39,6 +40,7 @@ function tick() {
     if (now - then >= interval - delta) {
         delta = Math.min(interval, delta + now - then - interval);
         then = now;
+        FRAMES.runOnFrames();
         updateStats();
 
         wasm.game_processTick();
@@ -50,10 +52,22 @@ function tick() {
                 // TODO: Fix magic number here. This is also on Zig side
                 if (diff === 69) {
                     var attacker_entity_id = wasm.diff_getData((l + 1));
+                    var attacker_entity_type = wasm.game_entityGetType(attacker_entity_id);
                     var attackee_entity_id = wasm.diff_getData((l + 2));
-                    var multiplayer_host_element = document.querySelector('multiplayer-host-component');
-                    if (multiplayer_host_element) {
-                        multiplayer_host_element.incrementLeaderboard(attacker_entity_id, attackee_entity_id);
+                    // TODO: referencing multiplayer-host-component stuff is weird here. global events maybe?
+                    if (attacker_entity_type < 3) {
+                        var multiplayer_host_element = document.querySelector('multiplayer-host-component');
+                        if (multiplayer_host_element) {
+                            multiplayer_host_element.incrementLeaderboard(attacker_entity_id, attackee_entity_id);
+                        }
+                    } else if (attacker_entity_type == 99) {                        
+                        var health = wasm.game_entityGetHealth(attackee_entity_id);
+                        if (health === 0) {
+                            var multiplayer_host_element = document.querySelector('multiplayer-host-component');
+                            if (multiplayer_host_element) {
+                                multiplayer_host_element.despawnUser(attackee_entity_id);
+                            }
+                        }
                     }
                     l += 2;
                 }
@@ -284,6 +298,15 @@ export class Game extends HTMLElement {
         globals.INPUTS = globals.INPUTS.concat(this.inputs);
         this.shadowRoot.getElementById('mode').innerText = globals.MODES[globals.MODE];
 
+        // TODO: This is kinda weird to put here, it's not the multiplayer file, but we need it here otherwise nothing initializes
+        if (window.USER) {
+            var multiplayer_element = document.querySelector('multiplayer-component');
+            if (!multiplayer_element) {
+                multiplayer_element = document.createElement('multiplayer-component');
+                document.body.appendChild(multiplayer_element);
+            }
+        }
+
         var atlas = new Image();
         atlas.onload = () => {
             this.atlas_loaded = true;
@@ -307,6 +330,17 @@ export class Game extends HTMLElement {
                     if (input.context === globals.MODES.indexOf('ALL') || input.context === globals.MODE) {
                         input.callback();
                     }
+                }
+            }
+        });
+
+        // TODO: Remove this hack
+        this.layer_zero_rendered = false;
+        FRAMES.addRunOnFrames(10, false, () => {
+            let entity_components = this.shadowRoot.querySelectorAll('entity-component');
+            for (let e = 0; e < entity_components.length; ++e) {
+                if (entity_components[e].auto_animate) {
+                    entity_components[e].updateAnimationFrame();
                 }
             }
         });
@@ -341,6 +375,8 @@ export class Game extends HTMLElement {
         // TODO: Be smart. Only remove components you need and update existing ones
         var entity_components = this.shadowRoot.getElementById('view').querySelectorAll('entity-component');
         for (var i = 0; i < entity_components.length; ++i) {
+            // TODO: Remove this hack
+            if (entity_components[i].layer === 0) { continue; }
             entity_components[i].remove();
         }
         var y = 0;
@@ -353,6 +389,8 @@ export class Game extends HTMLElement {
             if (wasm.viewport_getData(viewport_x, viewport_y)) {
                 var total_layers = wasm.game_getCurrentWorldTotalLayers();
                 for (var layer = 0; layer < total_layers; ++layer) {
+                    // TODO: Remove this hack
+                    if (layer === 0 && this.layer_zero_rendered === true) { continue; }
                     if (layer === wasm.game_getCurrentWorldCollisionLayer()) { continue; }
                     if (layer === wasm.game_getCurrentWorldEntityLayer()) {
                         // TODO: Deal with entities properly here
@@ -374,12 +412,17 @@ export class Game extends HTMLElement {
                             new_entity.setViewportXY(viewport_x, viewport_y);
                             new_entity.setLayer(layer);
                             new_entity.setEntityId(tile_id);
+                            if (layer === 0) {
+                                new_entity.setAnimationProperties();
+                            }
                             this.shadowRoot.getElementById('view').appendChild(new_entity);
                         }
                     }
                 }
             }
         }
+        // TODO: Remove this hack
+        this.layer_zero_rendered = true;
         globals.EVENTBUS.triggerEvent('game-rendered', []);
     }
 

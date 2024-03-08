@@ -2,6 +2,7 @@ import { RyansBackendSecondaryHole } from './websocket-ryans-backend-secondary-h
 import { globals } from './globals.js';
 import { globalStyles } from "./global-styles.js";
 import { wasm } from './injector_wasm.js';
+import { FRAMES } from './frames.js';
 
 export class Multiplayer extends HTMLElement {
     constructor() {
@@ -11,6 +12,7 @@ export class Multiplayer extends HTMLElement {
         // TODO: Share in a common module/webcomponent
         this.ships_to_players = [null, null, null, null, null];
         this.ships_to_players_colors = ['#e28383', '#9e9ef9', '#79df79', 'yellow', '#df70df'];
+        this.kraken_enabled = false;
 
         // TODO: Fun fact! Unless you inject the element onto the page
         // (which you don't want to do, in this case, until you need it)
@@ -138,6 +140,11 @@ export class Multiplayer extends HTMLElement {
         });
         globals.EVENTBUS.addEventListener('game-rendered', (e) => {
             this.updatePlayerList();
+            if (this.kraken_enabled === false) {
+                this.disableKraken();
+            } else if (this.kraken_enabled === true) {
+                this.enableKraken();
+            }
         });
         globals.EVENTBUS.addEventListener('opened-ryans-backend-secondary-hole', (e) => {
             console.log('a', e);
@@ -145,22 +152,28 @@ export class Multiplayer extends HTMLElement {
         globals.EVENTBUS.addEventListener('message-from-ryans-backend-secondary-hole', (e) => {
             console.log('b', e);
             if (e.data.user_spawned) {
-                this.ships_to_players = e.data.data;
-                this.updatePlayerList();
+                // TODO: Clear these out
+                // this.ships_to_players = e.data.data;
+                // this.updatePlayerList();
             } else if (e.data.user_despawned) {
-                this.ships_to_players = e.data.data;
-                this.updatePlayerList();
-            // } else if (e.data.update_health) {
-            //     for (var i = 0; i < e.data.update_health; ++i) {
-            //         if (e.data.update_health[i] !== null && e.data.update_health[i] !== undefined && e.data.update_health[i] > 0) {
-            //             wasm.game_entitySetHealth(this.ships_to_players[i].wasm_entity_id, e.data.update_health[i]);
-            //         } else {
-            //             // TODO: Probably should make sure this user doesn't exist in this.ships_to_players && despawn if they do
-            //         }
-            //     }
+                // TODO: Clear these out
+                // this.ships_to_players = e.data.data;
+                // this.updatePlayerList();
             } else if (e.data.game_state) {
-                console.log(e.data.game_state);
-                // TODO: Update ship positions && health && this.ships_to_players with colors
+                console.log('GAME STATE:', e.data.game_state);
+                // TODO: This is terribly hacky
+                for (var g = 0; g < e.data.game_state.ships_to_players.length; ++g) {
+                    if (e.data.game_state.ships_to_players[g] === null && this.ships_to_players[g] !== null) {
+                        var entity_id = this.ships_to_players[g].wasm_entity_id;
+                        wasm.game_entitySetHealth(entity_id, 0);
+                        // TODO: Update position maybe?
+                    } else if (e.data.game_state.ships_to_players[g] !== null && this.ships_to_players[g] === null) {
+                        var entity_id = e.data.game_state.ships_to_players[g].wasm_entity_id;
+                        wasm.game_entitySetHealth(entity_id, e.data.game_state.health[g]);
+                        wasm.game_entitySetPositionX(entity_id, e.data.game_state.positions[g][0]);
+                        wasm.game_entitySetPositionY(entity_id, e.data.game_state.positions[g][1]);
+                    }
+                }
                 this.ships_to_players = e.data.game_state.ships_to_players;
                 for (var i = 0; i < this.ships_to_players.length; ++i) {
                     if (this.ships_to_players[i] !== null) {
@@ -170,12 +183,38 @@ export class Multiplayer extends HTMLElement {
                         wasm.game_entitySetPositionY(entity_id, e.data.game_state.positions[i][1]);
                     }
                 }
+                if (e.data.game_state.kraken_enabled !== this.kraken_enabled) {
+                    this.kraken_enabled = e.data.game_state.kraken_enabled;
+                    if (e.data.game_state.kraken_enabled) {
+                        this.enableKraken();
+                    } else {
+                        this.disableKraken();
+                    }
+                    console.log('kraken_enabled', [this.kraken_enabled, e.data.game_state.kraken_enabled]);
+                }
+                // TODO: STOP USING MAGIC NUMBERS DAMMIT
+                let kraken_entity_id = 7;
+                wasm.game_entitySetPositionX(kraken_entity_id, e.data.game_state.kraken_position[0]);
+                wasm.game_entitySetPositionY(kraken_entity_id, e.data.game_state.kraken_position[1]);
+                wasm.game_entitySetHealth(kraken_entity_id, e.data.game_state.kraken_health);
             }
             console.log('ships to players', this.ships_to_players);
         });
-        // TODO: Connect to RyansBackendSecondaryHole via twitch I guess
+        // TODO: Potentially add client side twitch auth here
         if (window.USER) {
             RyansBackendSecondaryHole.init(window.USER.login, window.USER.username);
+            console.log('ROLE:', window.USER.role);
+            if (window.USER.role === 'mod' || window.USER.role === 'vip') {
+                // TODO: .. add controls for reset, disable/enable kraken, other perks
+                // TODO: automatically go into MULTIPlAYER mode, show controls
+                globals.MODE = globals.MODES.indexOf('MULTIPLAYER');
+                this.toggleOnScreenControls();
+                this.togglePlayerList();
+            }
+            // TODO: Enable these when roles are ready
+            // this.shadowRoot.querySelector('enable_kraken').classList.add('hidden');
+            // this.shadowRoot.querySelector('disable_kraken').classList.add('hidden');
+            // this.shadowRoot.querySelector('reset').classList.add('hidden');
         } else {
             const params = new Proxy(new URLSearchParams(window.location.search), {
                 get: (searchParams, prop) => searchParams.get(prop),
@@ -222,14 +261,41 @@ export class Multiplayer extends HTMLElement {
     adoptedCallback() {}
     attributeChangedCallback() {}
 
+    // TODO: Damn it we need a common place for this multiplayer stuff
+    enableKraken() {
+        this.kraken_enabled = true;
+        // TODO: Don't rely on magic numbers here!
+        let entity_id = 7;
+        let entity_layer = 2;
+        wasm.game_entityEnableCollision(entity_id);
+        var kraken_element = document.querySelector('game-component').shadowRoot.querySelector('[entity_id="' + entity_id + '"][layer="' + entity_layer + '"]');
+        if (kraken_element) {
+            console.log('show kraken!');
+            kraken_element.style.display = 'block';
+        }
+    }
+    disableKraken() {
+        this.kraken_enabled = false;
+        let entity_id = 7;
+        let entity_layer = 2;
+        wasm.game_entityDisableCollision(entity_id);
+        var kraken_element = document.querySelector('game-component').shadowRoot.querySelector('[entity_id="' + entity_id + '"][layer="' + entity_layer + '"]');
+        if (kraken_element) {
+            console.log('hide kraken!');
+            kraken_element.style.display = 'none';
+        }
+    }
+
     // TODO: This is shared with the multiplayer_host too. Maybe create a common component or something
     updatePlayerList() {
-        var players_element = this.shadowRoot.getElementById('players');
+        let players_element = this.shadowRoot.getElementById('players');
         players_element.innerHTML = '';
-        var game_component = document.querySelector('game-component');
-        var entity_components = game_component.shadowRoot.querySelector('entity-component');
-        for (var e = 0; e < entity_components.length; ++e) {
-            entity_components[e].clearBorder();
+        let game_component = document.querySelector('game-component');
+        let entity_components = game_component.shadowRoot.querySelector('entity-component');
+        if (entity_components && entity_components.length > 0) {
+            for (var e = 0; e < entity_components.length; ++e) {
+                entity_components[e].clearBorder();
+            }
         }
         for (var i = 0; i < this.ships_to_players.length; ++i) {
             if (this.ships_to_players[i] !== null) {
@@ -279,6 +345,10 @@ export class Multiplayer extends HTMLElement {
                     <input type="button" id="down" value="Move Down" />
                     <input type="button" id="left" value="Move Left" />
                     <input type="button" id="right" value="Move Right" />
+
+                    <input type="button" id="enable_kraken">Enable Kraken</input>
+                    <input type="button" id="disable_kraken">Disable Kraken</input>
+                    <input type="button" id="reset">Reset</input>
                 </div>
             </x-draggable>
             <x-draggable name="player-list" id="player-list" class="hidden">
