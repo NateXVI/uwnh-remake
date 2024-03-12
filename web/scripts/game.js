@@ -3,7 +3,7 @@ import './entity.js';
 import './collision-entity.js';
 import './viewport-entity.js';
 import { globals, possibleKrakenImages } from './globals.js';
-import '../components/draggable.js';
+import './webcomponents/draggable.js';
 import { Multiplayer } from './multiplayer.js';
 import { MultiplayerHost } from './multiplayer_host.js';
 import { globalStyles } from "./global-styles.js";
